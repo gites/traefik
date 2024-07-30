@@ -591,7 +591,7 @@ func (p *Provider) loadService(client Client, namespace string, backend netv1.In
 		}
 
 		if svcConfig.Service.NodePortLB && service.Spec.Type == corev1.ServiceTypeNodePort {
-			nodes, nodesExists, nodesErr := client.GetNodes()
+			nodes, nodesExists, nodesErr := client.GetNodes(namespace)
 			if nodesErr != nil {
 				return nil, nodesErr
 			}

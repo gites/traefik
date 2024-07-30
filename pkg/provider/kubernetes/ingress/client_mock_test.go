@@ -92,7 +92,7 @@ func (c clientMock) GetEndpointSlicesForService(namespace, serviceName string) (
 	return result, nil
 }
 
-func (c clientMock) GetNodes() ([]*corev1.Node, bool, error) {
+func (c clientMock) GetNodes(_ string) ([]*corev1.Node, bool, error) {
 	if c.apiNodesError != nil {
 		return nil, false, c.apiNodesError
 	}

@@ -49,7 +49,7 @@ type Client interface {
 	GetService(namespace, name string) (*corev1.Service, bool, error)
 	GetSecret(namespace, name string) (*corev1.Secret, bool, error)
 	GetEndpointSlicesForService(namespace, serviceName string) ([]*discoveryv1.EndpointSlice, error)
-	GetNodes() ([]*corev1.Node, bool, error)
+	GetNodes(namespace string) ([]*corev1.Node, bool, error)
 }
 
 // TODO: add tests for the clientWrapper (and its methods) itself.
@@ -57,10 +57,9 @@ type clientWrapper struct {
 	csCrd  traefikclientset.Interface
 	csKube kclientset.Interface
 
-	factoryClusterScope kinformers.SharedInformerFactory
-	factoriesCrd        map[string]traefikinformers.SharedInformerFactory
-	factoriesKube       map[string]kinformers.SharedInformerFactory
-	factoriesSecret     map[string]kinformers.SharedInformerFactory
+	factoriesCrd    map[string]traefikinformers.SharedInformerFactory
+	factoriesKube   map[string]kinformers.SharedInformerFactory
+	factoriesSecret map[string]kinformers.SharedInformerFactory
 
 	labelSelector string
 
@@ -225,6 +224,10 @@ func (c *clientWrapper) WatchAll(namespaces []string, stopCh <-chan struct{}) (<
 		if err != nil {
 			return nil, err
 		}
+		_, err = factoryKube.Core().V1().Nodes().Informer().AddEventHandler(eventHandler)
+		if err != nil {
+			return nil, err
+		}
 
 		factorySecret := kinformers.NewSharedInformerFactoryWithOptions(c.csKube, resyncPeriod, kinformers.WithNamespace(ns), kinformers.WithTweakListOptions(notOwnedByHelm))
 		_, err = factorySecret.Core().V1().Secrets().Informer().AddEventHandler(eventHandler)
@@ -237,18 +240,11 @@ func (c *clientWrapper) WatchAll(namespaces []string, stopCh <-chan struct{}) (<
 		c.factoriesSecret[ns] = factorySecret
 	}
 
-	c.factoryClusterScope = kinformers.NewSharedInformerFactory(c.csKube, resyncPeriod)
-	_, err := c.factoryClusterScope.Core().V1().Nodes().Informer().AddEventHandler(eventHandler)
-	if err != nil {
-		return nil, err
-	}
-
 	for _, ns := range namespaces {
 		c.factoriesCrd[ns].Start(stopCh)
 		c.factoriesKube[ns].Start(stopCh)
 		c.factoriesSecret[ns].Start(stopCh)
 	}
-	c.factoryClusterScope.Start(stopCh)
 
 	for _, ns := range namespaces {
 		for t, ok := range c.factoriesCrd[ns].WaitForCacheSync(stopCh) {
@@ -267,12 +263,6 @@ func (c *clientWrapper) WatchAll(namespaces []string, stopCh <-chan struct{}) (<
 			if !ok {
 				return nil, fmt.Errorf("timed out waiting for controller caches to sync %s in namespace %q", t.String(), ns)
 			}
-		}
-	}
-
-	for t, ok := range c.factoryClusterScope.WaitForCacheSync(stopCh) {
-		if !ok {
-			return nil, fmt.Errorf("timed out waiting for controller caches to sync %s", t.String())
 		}
 	}
 
@@ -473,8 +463,9 @@ func (c *clientWrapper) GetSecret(namespace, name string) (*corev1.Secret, bool,
 	return secret, exist, err
 }
 
-func (c *clientWrapper) GetNodes() ([]*corev1.Node, bool, error) {
-	nodes, err := c.factoryClusterScope.Core().V1().Nodes().Lister().List(labels.Everything())
+// GetNodes returns the cluster nodes
+func (c *clientWrapper) GetNodes(namespace string) ([]*corev1.Node, bool, error) {
+	nodes, err := c.factoriesKube[c.lookupNamespace(namespace)].Core().V1().Nodes().Lister().List(labels.Everything())
 	exist, err := translateNotFoundError(err)
 	return nodes, exist, err
 }

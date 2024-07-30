@@ -239,7 +239,7 @@ func (p *Provider) loadTCPServers(client Client, namespace string, svc traefikv1
 
 	var servers []dynamic.TCPServer
 	if service.Spec.Type == corev1.ServiceTypeNodePort && svc.NodePortLB {
-		nodes, nodesExists, nodesErr := client.GetNodes()
+		nodes, nodesExists, nodesErr := client.GetNodes(namespace)
 		if nodesErr != nil {
 			return nil, nodesErr
 		}
